@@ -1,0 +1,31 @@
+name: Daily Crawl & Analyze
+
+on:
+  schedule:
+    - cron: '0 18 * * *'  # 매일 새벽 3시 (KST)
+  workflow_dispatch:  # 수동 실행 가능
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r crawler/requirements.txt
+          pip install -r analyzer/requirements.txt
+
+      - name: Run crawler
+        run: python crawler/wanted_crawler.py
+
+      - name: Run analyzer
+        run: python analyzer/seed_analysis.py
