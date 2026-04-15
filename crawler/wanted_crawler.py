@@ -207,18 +207,20 @@ def parse_job(raw):
         if name:
             tech_tags.append(name)
 
-    # 경력 조건
-    exp_min = job.get("exp_min", None)
-    exp_max = job.get("exp_max", None)
+    # 경력 조건 (annual_from / annual_to 우선, 없으면 exp_min / exp_max)
+    exp_min = job.get("annual_from", job.get("exp_min", None))
+    exp_max = job.get("annual_to", job.get("exp_max", None))
     if exp_min is not None and exp_max is not None:
         if exp_max == 0 and exp_min == 0:
             experience_level = "신입"
+        elif exp_min == 0 and exp_max > 0:
+            experience_level = f"신입~{exp_max}년"
         elif exp_max >= 99:
             experience_level = f"{exp_min}년 이상"
         else:
             experience_level = f"{exp_min}~{exp_max}년"
     else:
-        experience_level = job.get("experience_level", {}).get("name", "") if isinstance(job.get("experience_level"), dict) else ""
+        experience_level = ""
 
     # 위치
     address = job.get("address", {}) or {}

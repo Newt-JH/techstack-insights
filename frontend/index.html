@@ -1263,19 +1263,44 @@
 
     let currentSection = 'dashboard';
 
+    async function fetchAllJobPostings() {
+      let allRows = [];
+      let offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data, error } = await sb.from('raw_job_postings').select('position, experience_level, requirements, preferred, tech_stack, source, source_id').range(offset, offset + batchSize - 1);
+        if (error || !data || data.length === 0) break;
+        allRows = allRows.concat(data);
+        if (data.length < batchSize) break;
+        offset += batchSize;
+      }
+      return allRows;
+    }
+
     function analyzeAITrends() {
       const jobFilter = filterJob.value;
       const expFilter = filterExp.value;
 
-      // We need full job data for AI analysis
-      sb.from('raw_job_postings').select('*').then(({ data, error }) => {
-        if (error || !data) return;
+      fetchAllJobPostings().then(data => {
+        if (!data || data.length === 0) return;
 
         // Apply filters
-        if (jobFilter) data = data.filter(d => d.position === jobFilter);
+        if (jobFilter) {
+          const classify = (p) => {
+            if (!p) return null;
+            const l = p.toLowerCase();
+            if (['프론트','frontend','front-end','react','vue'].some(k => l.includes(k))) return 'Frontend';
+            if (['백엔드','backend','back-end','서버','server','java','spring'].some(k => l.includes(k))) return 'Backend';
+            if (['devops','sre','infra','인프라','데브옵스','cloud'].some(k => l.includes(k))) return 'DevOps';
+            if (['data','데이터','ml','machine','ai ','머신러닝','딥러닝'].some(k => l.includes(k))) return 'Data Science';
+            if (['풀스택','fullstack','웹 개발','웹개발'].some(k => l.includes(k))) return 'Backend';
+            return null;
+          };
+          data = data.filter(d => classify(d.position) === jobFilter);
+        }
         if (expFilter) {
-          if (expFilter === 'junior') data = data.filter(d => ['신입','1~3년'].includes(d.experience_level));
-          else if (expFilter === 'senior') data = data.filter(d => ['3~5년','5~8년','9년+'].includes(d.experience_level));
+          if (expFilter === 'junior') data = data.filter(d => ['신입','신입~2년','신입~3년','1~3년','0~1년','0~2년','0~3년'].some(v => (d.experience_level||'').includes(v) || d.experience_level === '신입'));
+          else if (expFilter === 'senior') data = data.filter(d => !['신입','1~3년','0~1년','0~2년','0~3년'].some(v => (d.experience_level||'').includes(v)) && d.experience_level);
         }
 
         const toolCounts = {};
