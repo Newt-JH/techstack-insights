@@ -236,20 +236,14 @@
     </div>
 
     <!-- Loading State -->
-    <div id="loading-state" class="grid grid-cols-5 gap-5 mb-5">
-      <div class="col-span-3 card p-6">
-        <div class="skeleton h-5 w-40 mb-6"></div>
-        <div class="space-y-4">
-          <div class="skeleton h-10 w-full"></div>
-          <div class="skeleton h-10 w-full"></div>
-          <div class="skeleton h-10 w-full"></div>
-          <div class="skeleton h-10 w-full"></div>
-          <div class="skeleton h-10 w-full"></div>
+    <div id="loading-state" class="hidden card p-12 mb-5">
+      <div class="flex flex-col items-center gap-4">
+        <div class="w-10 h-10 border-4 border-primary-fixed border-t-primary rounded-full animate-spin"></div>
+        <h3 class="font-headline text-base font-bold text-on-surface">데이터를 불러오는 중...</h3>
+        <div class="w-64 progress-bar-track h-2">
+          <div id="loading-progress" class="progress-bar-fill h-2 transition-all duration-300" style="width: 0%"></div>
         </div>
-      </div>
-      <div class="col-span-2 card p-6">
-        <div class="skeleton h-5 w-36 mb-6"></div>
-        <div class="skeleton h-52 w-52 rounded-full mx-auto"></div>
+        <span id="loading-text" class="text-xs text-on-surface-variant">Supabase 연결 중...</span>
       </div>
     </div>
 
@@ -368,7 +362,7 @@
           <p class="text-sm text-on-surface-variant mt-1">보유 스킬과 경력을 입력하면 적합한 직무와 회사를 추천해드립니다</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <!-- 경력 선택 -->
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">경력</label>
@@ -381,6 +375,23 @@
               <option value="5~10년">5~10년</option>
               <option value="10년+">10년+</option>
             </select>
+          </div>
+
+          <!-- 지역 선택 (멀티) -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">지역</label>
+            <div id="rec-region-container" class="relative">
+              <button id="rec-region-toggle"
+                class="w-full h-10 px-3 text-sm font-medium bg-surface-container-low border border-outline-variant rounded-md text-on-surface-variant text-left focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer flex items-center justify-between">
+                <span id="rec-region-label">전국</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <div id="rec-region-dropdown" class="hidden absolute top-11 left-0 right-0 z-50 bg-surface-container-lowest border border-outline-variant rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div class="p-2">
+                  <div id="rec-region-list" class="space-y-0.5"></div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 스킬 선택 (멀티) -->
@@ -634,7 +645,12 @@
       showLoading();
 
       try {
+        const progress = document.getElementById('loading-progress');
+        const loadingText = document.getElementById('loading-text');
+
         // Fetch skill_analysis
+        if (progress) progress.style.width = '20%';
+        if (loadingText) loadingText.textContent = '스킬 분석 데이터 로딩 중...';
         const { data: skillData, error: skillError } = await sb
           .from('skill_analysis')
           .select('*');
@@ -642,6 +658,8 @@
         if (skillError) throw skillError;
 
         // Fetch raw_job_postings (전체, 페이지네이션)
+        if (progress) progress.style.width = '40%';
+        if (loadingText) loadingText.textContent = '채용공고 데이터 로딩 중...';
         let jobData = [];
         let jobOffset = 0;
         while (true) {
@@ -652,9 +670,14 @@
           if (jobError) throw jobError;
           if (!batch || batch.length === 0) break;
           jobData = jobData.concat(batch);
+          const pct = Math.min(40 + (jobData.length / 20), 90);
+          if (progress) progress.style.width = pct + '%';
+          if (loadingText) loadingText.textContent = `채용공고 ${jobData.length.toLocaleString()}건 로딩 중...`;
           if (batch.length < 1000) break;
           jobOffset += 1000;
         }
+        if (progress) progress.style.width = '100%';
+        if (loadingText) loadingText.textContent = '렌더링 중...';
 
         allSkillData = skillData || [];
         allJobData = jobData;
@@ -1088,6 +1111,60 @@
       }
     }
 
+    // ─── Region Dropdown for Recommend ─────────────────────────────────────
+    let selectedRegions = new Set();
+
+    function initRegionDropdown() {
+      // 공고 데이터에서 지역 추출
+      const regionSet = new Map(); // "서울" → Set(["강남구","서초구",...])
+      allJobData.forEach(j => {
+        const loc = j.location || '';
+        const match = loc.replace('한국 ','').trim();
+        if (match) regionSet.set(match, true);
+      });
+
+      // full_location에서 구 정보는 추천 결과에서 처리
+      const regions = [...regionSet.keys()].sort();
+
+      const container = document.getElementById('rec-region-list');
+      container.innerHTML = regions.map(r => {
+        const checked = selectedRegions.has(r) ? 'checked' : '';
+        return `
+          <label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-surface-container-low cursor-pointer text-sm text-on-surface">
+            <input type="checkbox" value="${r}" ${checked} onchange="toggleRegion('${r}', this.checked)"
+              class="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary cursor-pointer" />
+            ${r}
+          </label>
+        `;
+      }).join('');
+
+      const toggle = document.getElementById('rec-region-toggle');
+      const dropdown = document.getElementById('rec-region-dropdown');
+      toggle.onclick = (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('hidden');
+      };
+      document.addEventListener('click', (e) => {
+        if (!document.getElementById('rec-region-container').contains(e.target)) {
+          dropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    function toggleRegion(region, checked) {
+      if (checked) selectedRegions.add(region);
+      else selectedRegions.delete(region);
+      const label = document.getElementById('rec-region-label');
+      if (selectedRegions.size === 0) {
+        label.textContent = '전국';
+        label.classList.add('text-on-surface-variant');
+      } else {
+        label.textContent = `${selectedRegions.size}개 지역`;
+        label.classList.remove('text-on-surface-variant');
+      }
+      renderSelectedTags();
+    }
+
     // ─── Skill Dropdown for Recommend ──────────────────────────────────────
     let selectedSkills = new Set();
     let allUniqueSkills = [];
@@ -1100,6 +1177,7 @@
       });
       allUniqueSkills = [...skillSet].sort();
       renderSkillList(allUniqueSkills);
+      initRegionDropdown();
 
       // Toggle dropdown
       const toggle = document.getElementById('rec-skill-toggle');
@@ -1168,12 +1246,19 @@
 
     function renderSelectedTags() {
       const container = document.getElementById('rec-selected-skills');
-      container.innerHTML = [...selectedSkills].map(skill => `
+      const regionTags = [...selectedRegions].map(r => `
+        <span class="inline-flex items-center gap-1 px-3 py-1 bg-secondary-container text-on-secondary-container text-xs font-semibold rounded-full">
+          ${r}
+          <button onclick="toggleRegion('${r}', false);" class="hover:text-error ml-0.5">&times;</button>
+        </span>
+      `).join('');
+      const skillTags = [...selectedSkills].map(skill => `
         <span class="inline-flex items-center gap-1 px-3 py-1 bg-primary-fixed text-primary text-xs font-semibold rounded-full">
           ${skill}
           <button onclick="toggleSkill('${skill}', false); renderSkillList(allUniqueSkills);" class="hover:text-error ml-0.5">&times;</button>
         </span>
       `).join('');
+      container.innerHTML = regionTags + skillTags;
     }
 
     // ─── Recommend Logic ───────────────────────────────────────────────────
@@ -1207,6 +1292,13 @@
         let data = allData;
         if (exp) {
           data = data.filter(d => classifyExpMulti(d.experience_level).includes(exp));
+        }
+        // 지역 필터
+        if (selectedRegions.size > 0) {
+          data = data.filter(d => {
+            const loc = (d.location || '').replace('한국 ', '').trim();
+            return [...selectedRegions].some(r => loc.includes(r));
+          });
         }
 
         const skillArr = [...selectedSkills].map(s => s.toLowerCase());
@@ -1287,7 +1379,7 @@
                       ${post.matchedSkills.map(s => `<span class="px-2 py-0.5 bg-primary-fixed text-primary text-xs font-medium rounded">${s}</span>`).join('')}
                     </div>
                   ` : ''}
-                  <p class="text-xs text-on-surface-variant line-clamp-2">${post.requirements || ''}</p>
+                  <p class="text-xs text-on-surface-variant whitespace-pre-line">${(post.requirements || '').replace(/\s*•/g, (m, i) => i === 0 ? '•' : '\n•')}</p>
                 </div>
                 <div class="flex flex-col items-center gap-2 shrink-0">
                   <div class="w-12 h-12 rounded-full ${scoreBg} flex items-center justify-center">
