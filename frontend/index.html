@@ -1378,9 +1378,10 @@
                     <span class="badge badge-required shrink-0">${cleanJobTitle(post.position || post.title)}</span>
                   </div>
                   <p class="text-xs text-on-surface-variant mb-2">${post.company || ''} · ${post.location || ''} · ${post.experience_level || ''}</p>
-                  ${post.matchedSkills.length > 0 ? `
+                  ${post.matchedSkills.length > 0 || (post.tech_stack && post.tech_stack.length > 0) ? `
                     <div class="flex flex-wrap gap-1 mb-2">
-                      ${post.matchedSkills.map(s => `<span class="px-2 py-0.5 bg-primary-fixed text-primary text-xs font-medium rounded">${s}</span>`).join('')}
+                      ${post.matchedSkills.map(s => `<span class="px-2 py-0.5 bg-primary-fixed text-primary text-xs font-semibold rounded">${s}</span>`).join('')}
+                      ${(Array.isArray(post.tech_stack) ? post.tech_stack : []).filter(t => !post.matchedSkills.includes(t.toLowerCase())).map(t => `<span class="px-2 py-0.5 bg-surface-container-low text-on-surface-variant text-xs font-medium rounded">${t}</span>`).join('')}
                     </div>
                   ` : ''}
                   <p class="text-xs text-on-surface-variant whitespace-pre-line">${(post.requirements || '').replace(/\s*•/g, (m, i) => i === 0 ? '•' : '\n•')}</p>
