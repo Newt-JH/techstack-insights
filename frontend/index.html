@@ -722,10 +722,24 @@
         return true;
       });
 
-      // Filter job data
+      // Filter job data (position을 분류해서 비교)
       let jobs = allJobData.filter(j => {
-        if (jobFilter && j.position !== jobFilter) return false;
-        if (expFilter && j.experience_level !== expFilter) return false;
+        if (jobFilter && cleanJobTitle(j.position) !== cleanJobTitle(jobFilter)) {
+          // cleanJobTitle 결과가 아니라 카테고리로 비교
+          const posCategory = (() => {
+            const t = (j.position || '').toLowerCase();
+            if (['프론트','frontend','front-end','react','vue'].some(k => t.includes(k))) return 'Frontend';
+            if (['백엔드','backend','back-end','서버','server','풀스택','fullstack','웹 개발','웹개발'].some(k => t.includes(k))) return 'Backend';
+            if (['devops','sre','infra','인프라','데브옵스','cloud','클라우드'].some(k => t.includes(k))) return 'DevOps';
+            if (['data','데이터','ml','machine','ai','머신러닝','딥러닝'].some(k => t.includes(k))) return 'Data Science';
+            return null;
+          })();
+          if (posCategory !== jobFilter) return false;
+        }
+        if (expFilter) {
+          const groups = classifyExpMulti(j.experience_level);
+          if (!groups.includes(expFilter)) return false;
+        }
         return true;
       });
 
