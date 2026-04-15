@@ -1403,10 +1403,16 @@
             if (!p) return '기타';
             const l = p.toLowerCase();
             if (['프론트','frontend','front-end','react','vue','퍼블리셔'].some(k => l.includes(k))) return 'Frontend';
-            if (['백엔드','backend','back-end','서버','server','java','spring','풀스택','fullstack','웹 개발','웹개발'].some(k => l.includes(k))) return 'Backend';
-            if (['devops','sre','infra','인프라','데브옵스','cloud','클라우드','platform'].some(k => l.includes(k))) return 'DevOps';
-            if (['data','데이터','ml','machine','ai','머신러닝','딥러닝','deep'].some(k => l.includes(k))) return 'Data/AI';
-            if (['android','ios','모바일','mobile','flutter','react native'].some(k => l.includes(k))) return 'Mobile';
+            if (['백엔드','backend','back-end','서버','server','풀스택','fullstack','웹 개발','웹개발','web dev',' be ','be(','[be]'].some(k => l.includes(k))) return 'Backend';
+            if (['devops','sre','infra','인프라','데브옵스','cloud','클라우드','platform','쿠버네티스','kubernetes'].some(k => l.includes(k))) return 'DevOps';
+            if (['data','데이터','ml','machine','ai','머신러닝','딥러닝','deep','nlp','llm','search'].some(k => l.includes(k))) return 'Data/AI';
+            if (['android','ios','모바일','mobile','flutter','react native','swift','kotlin'].some(k => l.includes(k))) return 'Mobile';
+            if (['java','spring','python','django','node','go lang','golang','php','ruby','c#','c++','.net'].some(k => l.includes(k))) return 'Backend';
+            if (['기획','pm','product manager','프로덕트','po','project manager'].some(k => l.includes(k))) return '기획/PM';
+            if (['qa','test','품질','테스트'].some(k => l.includes(k))) return 'QA';
+            if (['보안','security','secops'].some(k => l.includes(k))) return '보안';
+            if (['임베디드','embedded','firmware','fw ','하드웨어','iot'].some(k => l.includes(k))) return '임베디드';
+            if (['개발','engineer','엔지니어','developer','sw ','소프트웨어'].some(k => l.includes(k))) return 'SW 엔지니어';
             return '기타';
           }
           const classifiedPos = classifyPos(pos);
