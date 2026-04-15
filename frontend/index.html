@@ -895,13 +895,28 @@
     }
 
     // ─── Experience Bar Chart ──────────────────────────────────────────────────
+    function classifyExp(exp) {
+      if (!exp || exp === '경력무관') return '경력무관';
+      if (exp.includes('신입') && !exp.includes('~')) return '신입';
+      const nums = exp.match(/\d+/g);
+      if (!nums) return '경력무관';
+      const min = parseInt(nums[0]);
+      if (exp.includes('신입') || min === 0) return '신입';
+      if (min >= 1 && min <= 2) return '1~3년';
+      if (min >= 3 && min <= 4) return '3~5년';
+      if (min >= 5 && min <= 9) return '5~10년';
+      if (min >= 10) return '10년+';
+      return '경력무관';
+    }
+
+    const EXP_ORDER = ['신입', '1~3년', '3~5년', '5~10년', '10년+', '경력무관'];
+
     function renderBarChart(jobs) {
       const canvas = document.getElementById('bar-chart');
 
-      // Aggregate by experience_level
       const expMap = {};
       jobs.forEach(j => {
-        const exp = j.experience_level || '미분류';
+        const exp = classifyExp(j.experience_level);
         expMap[exp] = (expMap[exp] || 0) + 1;
       });
 
@@ -911,12 +926,12 @@
         let src = allSkillData;
         if (skillJobFilter) src = src.filter(s => s.position_type === skillJobFilter);
         src.forEach(s => {
-          const exp = s.experience_level || '미분류';
+          const exp = classifyExp(s.experience_level);
           expMap[exp] = (expMap[exp] || 0) + 1;
         });
       }
 
-      const entries = Object.entries(expMap).sort((a, b) => b[1] - a[1]);
+      const entries = EXP_ORDER.filter(k => expMap[k]).map(k => [k, expMap[k]]);
       const labels = entries.map(([k]) => k);
       const data = entries.map(([, v]) => v);
 
