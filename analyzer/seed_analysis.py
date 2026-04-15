@@ -63,7 +63,7 @@ KEYWORDS = {
 # 헬퍼
 # ---------------------------------------------------------------------------
 
-def extract_keywords(text: str, keywords: list[str]) -> list[str]:
+def extract_keywords(text, keywords):
     """텍스트에서 등장하는 키워드 목록 반환 (중복 제거)."""
     if not text:
         return []
@@ -76,7 +76,7 @@ def extract_keywords(text: str, keywords: list[str]) -> list[str]:
     return found
 
 
-def classify_target(exp_level: str) -> str:
+def classify_target(exp_level):
     if exp_level in JUNIOR_EXP:
         return "junior"
     if exp_level in SENIOR_EXP:
@@ -84,27 +84,46 @@ def classify_target(exp_level: str) -> str:
     return "all"
 
 
+def classify_position(pos_raw):
+    """실제 포지션명을 Frontend/Backend/DevOps/Data Science로 분류"""
+    if not pos_raw:
+        return None
+    p = pos_raw.lower()
+    if any(k in p for k in ['프론트', 'frontend', 'front-end', 'fe ', 'react', 'vue', '퍼블리셔']):
+        return "Frontend"
+    if any(k in p for k in ['백엔드', 'backend', 'back-end', 'be ', '서버', 'server', 'java', 'spring']):
+        return "Backend"
+    if any(k in p for k in ['devops', 'sre', 'infra', '인프라', '데브옵스', 'cloud', '클라우드', 'platform']):
+        return "DevOps"
+    if any(k in p for k in ['data', '데이터', 'ml', 'machine', 'ai ', '머신러닝', '딥러닝', 'deep']):
+        return "Data Science"
+    if any(k in p for k in ['풀스택', 'fullstack', 'full-stack', 'full stack']):
+        return "Backend"
+    if any(k in p for k in ['웹 개발', '웹개발', 'web']):
+        return "Backend"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 분석
 # ---------------------------------------------------------------------------
 
-def analyze(rows: list[dict]) -> list[dict]:
+def analyze(rows):
     """
     rows: raw_job_postings 레코드 리스트
     반환: skill_analysis INSERT용 레코드 리스트
     """
-    total_by_position: dict[str, int] = defaultdict(int)
+    total_by_position = defaultdict(int)
     for row in rows:
-        pos = row.get("position", "")
-        if pos in KEYWORDS:
+        pos = classify_position(row.get("position", ""))
+        if pos:
             total_by_position[pos] += 1
 
-    # (position_type, keyword, target) -> {total, required, preferred}
-    stats: dict[tuple, dict] = defaultdict(lambda: {"total": 0, "required": 0, "preferred": 0})
+    stats = defaultdict(lambda: {"total": 0, "required": 0, "preferred": 0})
 
     for row in rows:
-        pos = row.get("position", "")
-        if pos not in KEYWORDS:
+        pos = classify_position(row.get("position", ""))
+        if not pos:
             continue
 
         exp = row.get("experience_level", "")
@@ -164,8 +183,17 @@ def main() -> None:
     client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     print("raw_job_postings 데이터 로딩 중...")
-    response = client.table("raw_job_postings").select("*").execute()
-    rows = response.data
+    # Supabase 기본 limit 1000이라 페이지네이션으로 전부 가져옴
+    rows = []
+    offset = 0
+    batch_size = 1000
+    while True:
+        response = client.table("raw_job_postings").select("*").range(offset, offset + batch_size - 1).execute()
+        batch = response.data or []
+        rows.extend(batch)
+        if len(batch) < batch_size:
+            break
+        offset += batch_size
     if not rows:
         print("raw_job_postings에 데이터가 없습니다. seed_data.py를 먼저 실행하세요.")
         sys.exit(1)
