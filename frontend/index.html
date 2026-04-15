@@ -374,12 +374,12 @@
             <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">경력</label>
             <select id="rec-exp"
               class="h-10 px-3 text-sm font-medium bg-surface-container-low border border-outline-variant rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer">
-              <option value="">선택해주세요</option>
+              <option value="">전체 경력</option>
               <option value="신입">신입</option>
               <option value="1~3년">1~3년</option>
               <option value="3~5년">3~5년</option>
-              <option value="5~8년">5~8년</option>
-              <option value="9년+">9년+</option>
+              <option value="5~10년">5~10년</option>
+              <option value="10년+">10년+</option>
             </select>
           </div>
 
@@ -641,15 +641,23 @@
 
         if (skillError) throw skillError;
 
-        // Fetch raw_job_postings (count + collected_at)
-        const { data: jobData, error: jobError } = await sb
-          .from('raw_job_postings')
-          .select('id, position, experience_level, crawled_at');
-
-        if (jobError) throw jobError;
+        // Fetch raw_job_postings (전체, 페이지네이션)
+        let jobData = [];
+        let jobOffset = 0;
+        while (true) {
+          const { data: batch, error: jobError } = await sb
+            .from('raw_job_postings')
+            .select('id, position, experience_level, crawled_at')
+            .range(jobOffset, jobOffset + 999);
+          if (jobError) throw jobError;
+          if (!batch || batch.length === 0) break;
+          jobData = jobData.concat(batch);
+          if (batch.length < 1000) break;
+          jobOffset += 1000;
+        }
 
         allSkillData = skillData || [];
-        allJobData = jobData || [];
+        allJobData = jobData;
 
         // Update footer
         footerCount.textContent = allJobData.length.toLocaleString();
@@ -895,21 +903,56 @@
     }
 
     // ─── Experience Bar Chart ──────────────────────────────────────────────────
-    function classifyExp(exp) {
-      if (!exp || exp === '경력무관') return '경력무관';
-      if (exp.includes('신입') && !exp.includes('~')) return '신입';
+    // 경력 범위를 여러 그룹에 매칭 가능하도록 반환
+    function classifyExpMulti(exp) {
+      if (!exp || exp === '경력무관') return ['신입','1~3년','3~5년','5~10년','10년+'];
       const nums = exp.match(/\d+/g);
-      if (!nums) return '경력무관';
-      const min = parseInt(nums[0]);
-      if (exp.includes('신입') || min === 0) return '신입';
+      if (!nums) return ['신입'];
+      const min = exp.includes('신입') ? 0 : parseInt(nums[0]);
+      const max = nums.length > 1 ? parseInt(nums[nums.length - 1]) : (exp.includes('이상') ? 99 : min);
+
+      const groups = [];
+      if (min <= 0) groups.push('신입');
+      if ((min <= 3 && max >= 1) || (min >= 1 && min <= 2)) groups.push('1~3년');
+      if ((min <= 5 && max >= 3) || (min >= 3 && min <= 4)) groups.push('3~5년');
+      if ((min <= 10 && max >= 5) || (min >= 5 && min <= 9)) groups.push('5~10년');
+      if (max >= 10 || min >= 10) groups.push('10년+');
+      return groups.length > 0 ? groups : ['신입'];
+    }
+
+    // 차트용: 가장 대표적인 그룹 하나만 반환
+    function classifyExp(exp) {
+      if (!exp || exp === '경력무관') return '신입';
+      const nums = exp.match(/\d+/g);
+      if (!nums) return '신입';
+      const min = exp.includes('신입') ? 0 : parseInt(nums[0]);
+      if (min === 0) return '신입';
       if (min >= 1 && min <= 2) return '1~3년';
       if (min >= 3 && min <= 4) return '3~5년';
       if (min >= 5 && min <= 9) return '5~10년';
       if (min >= 10) return '10년+';
-      return '경력무관';
+      return '신입';
     }
 
-    const EXP_ORDER = ['신입', '1~3년', '3~5년', '5~10년', '10년+', '경력무관'];
+    const EXP_ORDER = ['신입', '1~3년', '3~5년', '5~10년', '10년+'];
+
+    // 직무명 정리: "[팀명] 프론트엔드 개발자(3년 이상)" → "프론트엔드 개발자"
+    function cleanJobTitle(title) {
+      if (!title) return '기타';
+      const t = title.toLowerCase();
+      if (['프론트엔드','frontend','front-end','fe 개발'].some(k => t.includes(k))) return '프론트엔드 개발자';
+      if (['백엔드','backend','back-end','서버 개발','서버개발'].some(k => t.includes(k))) return '백엔드 개발자';
+      if (['풀스택','fullstack','full-stack','full stack'].some(k => t.includes(k))) return '풀스택 엔지니어';
+      if (['devops','sre','인프라','데브옵스','cloud','클라우드'].some(k => t.includes(k))) return '인프라 엔지니어';
+      if (['데이터','data engineer','데이터 엔지니어'].some(k => t.includes(k))) return '데이터 엔지니어';
+      if (['ml','머신러닝','machine learning','딥러닝','ai 엔지니어'].some(k => t.includes(k))) return 'ML 엔지니어';
+      if (['ios','android','모바일','mobile','flutter','react native'].some(k => t.includes(k))) return '모바일 개발자';
+      if (['기획','pm','product manager','프로덕트'].some(k => t.includes(k))) return '기획자';
+      if (['qa','test','품질','테스트'].some(k => t.includes(k))) return 'QA 엔지니어';
+      if (['보안','security'].some(k => t.includes(k))) return '보안 엔지니어';
+      if (['웹 개발','웹개발','web dev'].some(k => t.includes(k))) return '웹 개발자';
+      return '엔지니어';
+    }
 
     function renderBarChart(jobs) {
       const canvas = document.getElementById('bar-chart');
@@ -1148,13 +1191,23 @@
       document.getElementById('rec-empty').classList.add('hidden');
 
       try {
-        let query = sb.from('raw_job_postings').select('*');
-        if (exp) {
-          query = query.eq('experience_level', exp);
+        // 전체 데이터 페이지네이션으로 가져오기
+        let allData = [];
+        let offset = 0;
+        while (true) {
+          const { data: batch, error } = await sb.from('raw_job_postings').select('*').range(offset, offset + 999);
+          if (error) throw error;
+          if (!batch || batch.length === 0) break;
+          allData = allData.concat(batch);
+          if (batch.length < 1000) break;
+          offset += 1000;
         }
 
-        const { data, error } = await query;
-        if (error) throw error;
+        // 경력 필터 (범위 매칭)
+        let data = allData;
+        if (exp) {
+          data = data.filter(d => classifyExpMulti(d.experience_level).includes(exp));
+        }
 
         const skillArr = [...selectedSkills].map(s => s.toLowerCase());
 
@@ -1180,7 +1233,7 @@
         // Calculate position match summary
         const positionMap = {};
         results.forEach(p => {
-          const pos = p.position || '미분류';
+          const pos = cleanJobTitle(p.position || p.title);
           if (!positionMap[pos]) positionMap[pos] = { count: 0, totalScore: 0 };
           positionMap[pos].count++;
           positionMap[pos].totalScore += p.score;
@@ -1226,7 +1279,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-1">
                     <h3 class="text-sm font-bold text-on-surface truncate">${post.title || '제목 없음'}</h3>
-                    <span class="badge badge-required shrink-0">${post.position || ''}</span>
+                    <span class="badge badge-required shrink-0">${cleanJobTitle(post.position || post.title)}</span>
                   </div>
                   <p class="text-xs text-on-surface-variant mb-2">${post.company || ''} · ${post.location || ''} · ${post.experience_level || ''}</p>
                   ${post.matchedSkills.length > 0 ? `
@@ -1345,13 +1398,25 @@
             }
           }
 
-          const matchedTools = new Set(); // 공고당 중복 방지
+          // 직무 분류 함수
+          function classifyPos(p) {
+            if (!p) return '기타';
+            const l = p.toLowerCase();
+            if (['프론트','frontend','front-end','react','vue','퍼블리셔'].some(k => l.includes(k))) return 'Frontend';
+            if (['백엔드','backend','back-end','서버','server','java','spring','풀스택','fullstack','웹 개발','웹개발'].some(k => l.includes(k))) return 'Backend';
+            if (['devops','sre','infra','인프라','데브옵스','cloud','클라우드','platform'].some(k => l.includes(k))) return 'DevOps';
+            if (['data','데이터','ml','machine','ai','머신러닝','딥러닝','deep'].some(k => l.includes(k))) return 'Data/AI';
+            if (['android','ios','모바일','mobile','flutter','react native'].some(k => l.includes(k))) return 'Mobile';
+            return '기타';
+          }
+          const classifiedPos = classifyPos(pos);
+
+          const matchedTools = new Set();
           for (const [cat, tools] of Object.entries(AI_TOOLS)) {
             tools.forEach(tool => {
               if (all.includes(tool.toLowerCase())) {
-                // 동의어면 대표명으로 합산
                 const displayName = synonymToCanonical[tool.toLowerCase()] || tool;
-                if (matchedTools.has(displayName)) return; // 같은 공고에서 중복 방지
+                if (matchedTools.has(displayName)) return;
                 matchedTools.add(displayName);
 
                 if (!toolCounts[displayName]) toolCounts[displayName] = { total: 0, req: 0, pref: 0 };
@@ -1362,8 +1427,8 @@
                 if (!catCounts[cat]) catCounts[cat] = 0;
                 catCounts[cat]++;
 
-                if (!posCounts[pos]) posCounts[pos] = 0;
-                posCounts[pos]++;
+                if (!posCounts[classifiedPos]) posCounts[classifiedPos] = 0;
+                posCounts[classifiedPos]++;
 
                 if (!reqPrefCounts[displayName]) reqPrefCounts[displayName] = { req: 0, pref: 0 };
                 if (req.includes(tool.toLowerCase())) reqPrefCounts[displayName].req++;
