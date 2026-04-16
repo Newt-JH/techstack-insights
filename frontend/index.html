@@ -1579,6 +1579,22 @@
       });
     }
 
+    // AI 카테고리 판별 (공통)
+    function getAICategory(name) {
+      for (const [cat, tools] of Object.entries(AI_TOOLS)) {
+        if (tools.some(t => t.toLowerCase() === name.toLowerCase())) return cat;
+      }
+      for (const [canonical, variants] of Object.entries(AI_SYNONYMS)) {
+        if (variants.some(v => v.toLowerCase() === name.toLowerCase()) || canonical.toLowerCase() === name.toLowerCase()) {
+          for (const [cat, tools] of Object.entries(AI_TOOLS)) {
+            if (tools.some(t => variants.some(v => t.toLowerCase() === v.toLowerCase()))) return cat;
+          }
+        }
+      }
+      return '도구';
+    }
+    const catBadgeStyle = { '도구': 'background:#e0e7ff;color:#3730a3;', '프레임워크': 'background:#d1fae5;color:#065f46;', '기법': 'background:#fef3c7;color:#92400e;' };
+
     function renderAIToolList(toolCounts) {
       const container = document.getElementById('ai-tool-list');
       const sorted = Object.entries(toolCounts).sort((a, b) => b[1].total - a[1].total).slice(0, 10);
@@ -1587,23 +1603,6 @@
         container.innerHTML = '<p class="text-sm text-on-surface-variant text-center py-8">AI 관련 키워드가 없습니다</p>';
         return;
       }
-
-      // 이름으로 카테고리 찾기
-      function getAICategory(name) {
-        for (const [cat, tools] of Object.entries(AI_TOOLS)) {
-          if (tools.some(t => t.toLowerCase() === name.toLowerCase())) return cat;
-        }
-        // 동의어도 체크
-        for (const [canonical, variants] of Object.entries(AI_SYNONYMS)) {
-          if (variants.some(v => v.toLowerCase() === name.toLowerCase()) || canonical.toLowerCase() === name.toLowerCase()) {
-            for (const [cat, tools] of Object.entries(AI_TOOLS)) {
-              if (tools.some(t => variants.some(v => t.toLowerCase() === v.toLowerCase()))) return cat;
-            }
-          }
-        }
-        return '도구';
-      }
-      const catBadgeStyle = { '도구': 'background:#e0e7ff;color:#3730a3;', '프레임워크': 'background:#d1fae5;color:#065f46;', '기법': 'background:#fef3c7;color:#92400e;' };
 
       const maxCount = sorted[0][1].total;
       container.innerHTML = sorted.map(([name, info], i) => {
