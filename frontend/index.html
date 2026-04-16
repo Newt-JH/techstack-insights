@@ -1582,16 +1582,38 @@
         return;
       }
 
+      // 이름으로 카테고리 찾기
+      function getAICategory(name) {
+        for (const [cat, tools] of Object.entries(AI_TOOLS)) {
+          if (tools.some(t => t.toLowerCase() === name.toLowerCase())) return cat;
+        }
+        // 동의어도 체크
+        for (const [canonical, variants] of Object.entries(AI_SYNONYMS)) {
+          if (variants.some(v => v.toLowerCase() === name.toLowerCase()) || canonical.toLowerCase() === name.toLowerCase()) {
+            for (const [cat, tools] of Object.entries(AI_TOOLS)) {
+              if (tools.some(t => variants.some(v => t.toLowerCase() === v.toLowerCase()))) return cat;
+            }
+          }
+        }
+        return '도구';
+      }
+      const catBadgeStyle = { '도구': 'background:#e0e7ff;color:#3730a3;', '프레임워크': 'background:#d1fae5;color:#065f46;', '기법': 'background:#fef3c7;color:#92400e;' };
+
       const maxCount = sorted[0][1].total;
       container.innerHTML = sorted.map(([name, info], i) => {
         const pct = Math.round((info.total / maxCount) * 100);
         const rankColor = i === 0 ? 'font-bold' : i < 3 ? 'font-semibold' : 'font-medium';
+        const cat = getAICategory(name);
+        const badgeStyle = catBadgeStyle[cat] || catBadgeStyle['도구'];
         return `
           <div class="flex items-center gap-3">
             <span class="w-5 text-xs text-on-surface-variant text-right tabular-nums shrink-0 ${rankColor}">${i + 1}</span>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between mb-1.5">
-                <span class="text-sm font-semibold text-on-surface">${name}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-on-surface">${name}</span>
+                  <span class="text-xs font-medium px-1.5 py-0.5 rounded" style="${badgeStyle}">${cat}</span>
+                </div>
                 <span class="text-xs font-bold shrink-0 ml-2" style="color:#7c3aed;">${info.total}건</span>
               </div>
               <div class="progress-bar-track h-2">
@@ -1662,7 +1684,10 @@
         return `
           <div>
             <div class="flex items-center justify-between mb-1.5">
-              <span class="text-sm font-semibold text-on-surface">${item.name}</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-on-surface">${item.name}</span>
+                <span class="text-xs font-medium px-1.5 py-0.5 rounded" style="${catBadgeStyle[getAICategory(item.name)] || catBadgeStyle['도구']}">${getAICategory(item.name)}</span>
+              </div>
               <span class="text-xs text-on-surface-variant tabular-nums">${item.total}건</span>
             </div>
             <div class="progress-bar-track h-3 flex overflow-hidden">
