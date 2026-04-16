@@ -831,6 +831,14 @@
         return '기타';
       }
 
+      // 텍스트에서 기술 키워드 추출
+      const ALL_SKILLS = Object.values(SKILL_CATEGORIES).flat();
+      function extractSkillsFromText(text) {
+        if (!text) return [];
+        const lower = text.toLowerCase();
+        return ALL_SKILLS.filter(s => lower.includes(s.toLowerCase()));
+      }
+
       const catMap = {};
       skills.forEach(s => {
         const cat = getSkillCategory(s.keyword || '');
@@ -1392,12 +1400,17 @@
                     <span class="badge badge-required shrink-0">${cleanJobTitle(post.position || post.title)}</span>
                   </div>
                   <p class="text-xs text-on-surface-variant mb-2">${post.company || ''} · ${post.location || ''} · ${post.experience_level || ''}</p>
-                  ${post.matchedSkills.length > 0 || (post.tech_stack && post.tech_stack.length > 0) ? `
+                  ${(() => {
+                    const allText = `${post.requirements || ''} ${post.preferred || ''} ${post.tech_stack || ''}`;
+                    const extracted = extractSkillsFromText(allText);
+                    const matchedLower = post.matchedSkills.map(s => s.toLowerCase());
+                    const otherSkills = extracted.filter(s => !matchedLower.includes(s.toLowerCase()));
+                    return (post.matchedSkills.length > 0 || otherSkills.length > 0) ? `
                     <div class="flex flex-wrap gap-1 mb-2">
                       ${post.matchedSkills.map(s => `<span class="px-2 py-0.5 bg-primary-fixed text-primary text-xs font-semibold rounded">${s}</span>`).join('')}
-                      ${(Array.isArray(post.tech_stack) ? post.tech_stack : []).filter(t => !post.matchedSkills.includes(t.toLowerCase())).map(t => `<span class="px-2 py-0.5 bg-surface-container-low text-on-surface-variant text-xs font-medium rounded">${t}</span>`).join('')}
-                    </div>
-                  ` : ''}
+                      ${otherSkills.slice(0, 10).map(t => `<span class="px-2 py-0.5 bg-surface-container-low text-on-surface-variant text-xs font-medium rounded">${t}</span>`).join('')}
+                    </div>` : '';
+                  })()}
                   <p class="text-xs text-on-surface-variant whitespace-pre-line">${(post.requirements || '').replace(/\s*•/g, (m, i) => i === 0 ? '•' : '\n•')}</p>
                 </div>
                 <div class="flex flex-col items-center gap-2 shrink-0">
