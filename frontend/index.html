@@ -1194,12 +1194,22 @@
     let selectedSkills = new Set();
     let allUniqueSkills = [];
 
+    // 합칠 스킬 쌍 (표시명 → 개별 키워드로 매칭)
+    const SKILL_MERGE = {
+      'HTML/CSS': ['HTML', 'CSS', 'HTML/CSS'],
+    };
+    const SKILL_MERGE_HIDDEN = new Set(); // 드롭다운에서 숨길 개별 키워드
+    Object.values(SKILL_MERGE).forEach(arr => arr.forEach(s => SKILL_MERGE_HIDDEN.add(s)));
+
     function initSkillDropdown() {
       // Get unique skills from allSkillData
       const skillSet = new Set();
       allSkillData.forEach(s => {
         if (s.keyword) skillSet.add(s.keyword);
       });
+      // 머지 대상 개별 키워드 제거, 머지 표시명 추가
+      SKILL_MERGE_HIDDEN.forEach(s => skillSet.delete(s));
+      Object.keys(SKILL_MERGE).forEach(k => skillSet.add(k));
       allUniqueSkills = [...skillSet].sort();
       renderSkillList(allUniqueSkills);
       initRegionDropdown();
