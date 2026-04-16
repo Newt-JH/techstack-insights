@@ -1450,7 +1450,8 @@
     // ─── AI Trends ──────────────────────────────────────────────────────────
     const AI_TOOLS = {
       '도구': ['Copilot','GitHub Copilot','Claude Code','클로드코드','Claude','Cursor','Cody','Tabnine','CodeWhisperer','Windsurf','Devin','ChatGPT','GPT-4','Gemini','Perplexity','Midjourney','DALL-E','Stable Diffusion','Runway','Sora','Figma AI','Adobe Firefly','Notion AI','Gamma','Jasper','Grammarly AI'],
-      '프레임워크': ['OpenAI','Anthropic','LangChain','LlamaIndex'],
+      'API/플랫폼': ['OpenAI','Anthropic'],
+      '프레임워크': ['LangChain','LlamaIndex'],
       '기법': ['RAG','벡터DB'],
     };
 
@@ -1593,7 +1594,7 @@
       }
       return '도구';
     }
-    const catBadgeStyle = { '도구': 'background:#e0e7ff;color:#3730a3;', '프레임워크': 'background:#d1fae5;color:#065f46;', '기법': 'background:#fef3c7;color:#92400e;' };
+    const catBadgeStyle = { '도구': 'background:#e0e7ff;color:#3730a3;', 'API/플랫폼': 'background:#fce7f3;color:#9d174d;', '프레임워크': 'background:#d1fae5;color:#065f46;', '기법': 'background:#fef3c7;color:#92400e;' };
 
     function renderAIToolList(toolCounts) {
       const container = document.getElementById('ai-tool-list');
