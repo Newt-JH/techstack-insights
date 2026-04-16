@@ -1328,19 +1328,23 @@
         }
 
         const skillArr = [...selectedSkills].map(s => s.toLowerCase());
+        // "HTML/CSS" → ["html", "css"] 로 분리해서 매칭
+        const expandedSkills = [];
+        skillArr.forEach(s => {
+          if (s.includes('/')) s.split('/').forEach(p => expandedSkills.push({ original: s, search: p.trim() }));
+          else expandedSkills.push({ original: s, search: s });
+        });
 
-        // Score each posting
+        // Score each posting - 하나라도 포함되면 매칭, 많이 포함될수록 높은 점수
         const scored = (data || []).map(post => {
           const text = `${post.requirements || ''} ${post.preferred || ''} ${post.tech_stack || ''}`.toLowerCase();
-          let matched = 0;
-          let matchedSkills = [];
-          skillArr.forEach(skill => {
-            if (text.includes(skill)) {
-              matched++;
-              matchedSkills.push(skill);
-            }
+          const matchedSet = new Set();
+          expandedSkills.forEach(({ original, search }) => {
+            if (text.includes(search)) matchedSet.add(original);
           });
-          const score = Math.round((matched / skillArr.length) * 100);
+          const matchedSkills = [...matchedSet];
+          const matched = matchedSkills.length;
+          const score = skillArr.length > 0 ? Math.round((matched / skillArr.length) * 100) : 0;
           return { ...post, score, matched, matchedSkills };
         });
 
@@ -1364,9 +1368,11 @@
 
         if (results.length === 0) {
           document.getElementById('rec-empty').classList.remove('hidden');
+          document.getElementById('rec-results').classList.add('hidden');
           return;
         }
 
+        document.getElementById('rec-empty').classList.add('hidden');
         document.getElementById('rec-results').classList.remove('hidden');
         document.getElementById('rec-count').textContent = `${results.length}건`;
 
