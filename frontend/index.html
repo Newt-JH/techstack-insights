@@ -808,36 +808,35 @@
       }).join('');
     }
 
+    // ─── Skill Categories (공통) ─────────────────────────────────────────────
+    const SKILL_CATEGORIES = {
+      '언어': ['JavaScript','TypeScript','Python','Java','Go','Kotlin','Swift','Ruby','Rust','C++','C#','PHP','Scala','R','SQL','HTML','CSS'],
+      '프레임워크': ['React','Vue','Angular','Next.js','Nuxt.js','Spring','Django','Flask','FastAPI','Express','NestJS','Rails','Laravel','Svelte','JPA','Hibernate','Spring Boot','Node.js'],
+      '데이터베이스': ['MySQL','PostgreSQL','MongoDB','Redis','Elasticsearch','DynamoDB','Oracle','MariaDB','Cassandra','SQLite'],
+      '클라우드/인프라': ['AWS','GCP','Azure','Docker','Kubernetes','Terraform','Jenkins','CI/CD','Linux','Ansible','Nginx','ArgoCD','Helm','Prometheus','Grafana','Datadog','ELK'],
+      'AI/데이터': ['TensorFlow','PyTorch','Pandas','NumPy','Spark','Hadoop','Tableau','Keras','Scikit-learn','Airflow','Kafka','MLflow'],
+      '도구': ['Git','Figma','Jira','Slack','Notion','Storybook','Webpack','Vite','Jest','Cypress','Mocha','Sentry','GraphQL','REST API','gRPC','Tailwind','Redux','MobX','Zustand','Recoil'],
+    };
+
+    function getSkillCategory(keyword) {
+      for (const [cat, skills] of Object.entries(SKILL_CATEGORIES)) {
+        if (skills.some(s => keyword.toLowerCase().includes(s.toLowerCase()))) return cat;
+      }
+      return '기타';
+    }
+
+    const ALL_SKILLS = Object.values(SKILL_CATEGORIES).flat();
+    function extractSkillsFromText(text) {
+      if (!text) return [];
+      const lower = text.toLowerCase();
+      return ALL_SKILLS.filter(s => lower.includes(s.toLowerCase()));
+    }
+
     // ─── Donut Chart ───────────────────────────────────────────────────────────
     function renderDonutChart(skills) {
       const canvas = document.getElementById('donut-chart');
       const legend = document.getElementById('donut-legend');
       const totalEl = document.getElementById('donut-total');
-
-      // Categorize skills by type
-      const SKILL_CATEGORIES = {
-        '언어': ['JavaScript','TypeScript','Python','Java','Go','Kotlin','Swift','Ruby','Rust','C++','C#','PHP','Scala','R','SQL','HTML','CSS'],
-        '프레임워크': ['React','Vue','Angular','Next.js','Nuxt.js','Spring','Django','Flask','FastAPI','Express','NestJS','Rails','Laravel','Svelte','JPA','Hibernate','Spring Boot','Node.js'],
-        '데이터베이스': ['MySQL','PostgreSQL','MongoDB','Redis','Elasticsearch','DynamoDB','Oracle','MariaDB','Cassandra','SQLite'],
-        '클라우드/인프라': ['AWS','GCP','Azure','Docker','Kubernetes','Terraform','Jenkins','CI/CD','Linux','Ansible','Nginx','ArgoCD','Helm','Prometheus','Grafana','Datadog','ELK'],
-        'AI/데이터': ['TensorFlow','PyTorch','Pandas','NumPy','Spark','Hadoop','Tableau','Keras','Scikit-learn','Airflow','Kafka','MLflow'],
-        '도구': ['Git','Figma','Jira','Slack','Notion','Storybook','Webpack','Vite','Jest','Cypress','Mocha','Sentry','GraphQL','REST API','gRPC','Tailwind','Redux','MobX','Zustand','Recoil'],
-      };
-
-      function getSkillCategory(keyword) {
-        for (const [cat, skills] of Object.entries(SKILL_CATEGORIES)) {
-          if (skills.some(s => keyword.toLowerCase().includes(s.toLowerCase()))) return cat;
-        }
-        return '기타';
-      }
-
-      // 텍스트에서 기술 키워드 추출
-      const ALL_SKILLS = Object.values(SKILL_CATEGORIES).flat();
-      function extractSkillsFromText(text) {
-        if (!text) return [];
-        const lower = text.toLowerCase();
-        return ALL_SKILLS.filter(s => lower.includes(s.toLowerCase()));
-      }
 
       const catMap = {};
       skills.forEach(s => {
