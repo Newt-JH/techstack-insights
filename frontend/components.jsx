@@ -16,43 +16,23 @@ function useInView(opts = { threshold: 0.15, once: true }) {
   return [ref, seen];
 }
 
-/* ────────── Magnetic card hover (spotlight + tilt) ────────── */
-function useMagnetic(maxTilt = 4) {
+/* ────────── Card hover spotlight (no tilt) ────────── */
+// Tracks cursor position via CSS custom properties so styles.css can render a
+// soft radial highlight under the cursor. The previous tilt/translate was
+// removed because it made the cards feel wobbly.
+function useMagnetic() {
   const ref = useRef(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    let raf;
     const onMove = (e) => {
-      // Skip while reveal animation hasn't yet committed `in`
-      if (el.classList.contains("armed") && !el.classList.contains("in")) return;
-      // Skip if reveal transition is mid-flight (very recent .in)
       const r = el.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
-      const px = x / r.width;
-      const py = y / r.height;
-      el.style.setProperty("--mx", x + "px");
-      el.style.setProperty("--my", y + "px");
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const tx = (px - 0.5) * maxTilt * 2;
-        const ty = (0.5 - py) * maxTilt * 2;
-        el.style.transform = `translateY(-4px) perspective(900px) rotateX(${ty}deg) rotateY(${tx}deg)`;
-      });
-    };
-    const onLeave = () => {
-      cancelAnimationFrame(raf);
-      el.style.transform = "";
+      el.style.setProperty("--mx", (e.clientX - r.left) + "px");
+      el.style.setProperty("--my", (e.clientY - r.top) + "px");
     };
     el.addEventListener("mousemove", onMove);
-    el.addEventListener("mouseleave", onLeave);
-    return () => {
-      el.removeEventListener("mousemove", onMove);
-      el.removeEventListener("mouseleave", onLeave);
-      cancelAnimationFrame(raf);
-    };
-  }, [maxTilt]);
+    return () => el.removeEventListener("mousemove", onMove);
+  }, []);
   return ref;
 }
 

@@ -1,9 +1,17 @@
 // Dashboard section (Market Trends)
 
 function DashboardSection() {
-  const D = window.TSI_DATA;
   const [filterRole, setFilterRole] = useState("전체 직무");
   const [filterExp, setFilterExp]   = useState("전체 경력");
+
+  // Re-aggregate against TSI_RAW whenever a filter changes. Falls back to
+  // the boot snapshot if TSI_RAW is missing (Supabase fetch failed at boot).
+  const D = useMemo(() => {
+    if (window.TSI_AGGREGATE && window.TSI_RAW) {
+      return window.TSI_AGGREGATE({ role: filterRole, exp: filterExp });
+    }
+    return window.TSI_DATA;
+  }, [filterRole, filterExp]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -15,18 +23,26 @@ function DashboardSection() {
         <Card title="필수 스킬 TOP 10" sub="언급 빈도 기준 상위 기술 스택"
           action={<Tag kind="language">필수 스킬</Tag>} accent>
           <div>
-            {D.SKILLS_TOP10.map((s, i) => (
-              <HBar key={s.name}
-                rank={i + 1} label={s.name}
-                value={s.count} max={D.SKILLS_TOP10[0].count} count={s.count}
-                color={`var(--cat-${s.cat})`} trend={s.trend} />
-            ))}
+            {D.SKILLS_TOP10.length === 0 ? (
+              <EmptyChart label="조건에 해당하는 스킬 데이터가 없습니다" />
+            ) : (
+              D.SKILLS_TOP10.map((s, i) => (
+                <HBar key={s.name}
+                  rank={i + 1} label={s.name}
+                  value={s.count} max={D.SKILLS_TOP10[0].count} count={s.count}
+                  color={`var(--cat-${s.cat})`} trend={s.trend} />
+              ))
+            )}
           </div>
         </Card>
 
         <Card title="스킬 카테고리 비중" sub="카테고리별 기술 요구 분포" accent>
-          <Donut data={D.CATEGORY_DIST} size={200} thickness={26}
-            label={D.CATEGORY_DIST.length} sublabel="총 카테고리" />
+          {D.CATEGORY_DIST.length === 0 ? (
+            <EmptyChart label="데이터 없음" />
+          ) : (
+            <Donut data={D.CATEGORY_DIST} size={200} thickness={26}
+              label={D.CATEGORY_DIST.length} sublabel="총 카테고리" />
+          )}
         </Card>
       </div>
 
@@ -38,14 +54,18 @@ function DashboardSection() {
             { color: "var(--pref)", label: "우대" },
           ]}/>} accent>
           <div>
-            {D.SKILLS_TOP10.slice(1, 7).map((s) => (
-              <ReqPrefBar key={s.name}
-                name={s.name} count={s.count}
-                required={s.required} preferred={s.preferred}
-                tag={s.cat === "language" ? "언어" : s.cat === "cloud" ? "클라우드/인프라" : s.cat === "tool" ? "도구" : "프레임워크"}
-                max={D.SKILLS_TOP10[1].count}
-              />
-            ))}
+            {D.SKILLS_TOP10.length < 2 ? (
+              <EmptyChart label="데이터 없음" />
+            ) : (
+              D.SKILLS_TOP10.slice(1, 7).map((s) => (
+                <ReqPrefBar key={s.name}
+                  name={s.name} count={s.count}
+                  required={s.required} preferred={s.preferred}
+                  tag={s.cat === "language" ? "언어" : s.cat === "cloud" ? "클라우드/인프라" : s.cat === "tool" ? "도구" : "프레임워크"}
+                  max={D.SKILLS_TOP10[1].count}
+                />
+              ))
+            )}
           </div>
         </Card>
 
@@ -120,4 +140,13 @@ function Legend({ items }) {
   );
 }
 
-Object.assign(window, { DashboardSection, FilterBar, TrendingMini, Legend });
+function EmptyChart({ label }) {
+  return (
+    <div style={{
+      padding: "32px 0", textAlign: "center",
+      fontSize: 12, color: "var(--text-3)",
+    }}>{label}</div>
+  );
+}
+
+Object.assign(window, { DashboardSection, FilterBar, TrendingMini, Legend, EmptyChart });

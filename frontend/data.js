@@ -1,178 +1,398 @@
-// TSI_DATA — TechStack Insights mock dataset
-// Shape consumed by section-dashboard / section-match / section-ai.
-// Real data wiring (Supabase, etc.) can replace these arrays without
-// changing the UI as long as the field names stay the same.
+// data.js — Supabase fetch + TSI_DATA aggregation
+// ─────────────────────────────────────────────────────────────────────
+// Public flow:
+//   1. window.TSI_LOAD() — fetches raw rows once, stores on window.TSI_RAW,
+//      and returns an unfiltered TSI_DATA snapshot. index.html awaits this
+//      before mounting React.
+//   2. window.TSI_AGGREGATE({ role, exp }) — re-aggregates window.TSI_RAW
+//      against the given filters. Sections call this from useMemo when
+//      a filter changes so charts re-render against the filtered subset.
+//
+// If the Supabase fetch fails we still resolve with a minimal empty stub
+// so the UI renders an empty state instead of a blank screen.
+// ─────────────────────────────────────────────────────────────────────
 
-window.TSI_DATA = {
-  UPDATED: "2026-04-30",
-  TOTAL_JOBS: 8421,
-  TOTAL_SKILLS: 142,
-  TOTAL_AI_TOOLS: 38,
+const SUPABASE_URL = "https://zrxcoutfpslkuvaepkwh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0_jNsRRO6h89bHfv4ErItA_Lvp1H1FI";
 
-  // Top 10 skills (rank list + req/pref split)
-  // cat: language | cloud | tool | framework | method | api | ai | other
-  SKILLS_TOP10: [
-    { name: "Python",     count: 4120, cat: "language",  trend:  8, required: 62, preferred: 38 },
-    { name: "Java",       count: 3580, cat: "language",  trend:  2, required: 70, preferred: 30 },
-    { name: "AWS",        count: 3210, cat: "cloud",     trend: 12, required: 55, preferred: 45 },
-    { name: "Docker",     count: 2840, cat: "tool",      trend:  9, required: 48, preferred: 52 },
-    { name: "Kubernetes", count: 2210, cat: "tool",      trend: 18, required: 35, preferred: 65 },
-    { name: "Spring",     count: 2080, cat: "framework", trend:  1, required: 72, preferred: 28 },
-    { name: "React",      count: 1960, cat: "framework", trend:  6, required: 60, preferred: 40 },
-    { name: "TypeScript", count: 1740, cat: "language",  trend: 15, required: 52, preferred: 48 },
-    { name: "SQL",        count: 1610, cat: "language",  trend:  3, required: 68, preferred: 32 },
-    { name: "Go",         count:  980, cat: "language",  trend: 22, required: 30, preferred: 70 },
+// ─── Skill category map (mirrors analyzer's keyword groups) ──────────
+const SKILL_CATEGORIES = {
+  language:  ["JavaScript","TypeScript","Python","Java","Go","Kotlin","Swift","Ruby","Rust","C++","C#","PHP","Scala","R","SQL","HTML","CSS","HTML/CSS"],
+  framework: ["React","Vue","Angular","Next.js","Nuxt.js","Spring","Django","Flask","FastAPI","Express","NestJS","Rails","Laravel","Svelte","JPA","Hibernate","Spring Boot","Node.js","React Native","Flutter"],
+  cloud:     ["AWS","GCP","Azure","Docker","Kubernetes","Terraform","Jenkins","CI/CD","Linux","Ansible","Nginx","ArgoCD","Helm","Prometheus","Grafana","Datadog","ELK","GitHub Actions","GitLab CI"],
+  tool:      ["Git","GitHub","GitLab","Figma","Jira","Slack","Notion","Storybook","Webpack","Vite","Jest","Cypress","Selenium","Pytest","Sass/SCSS","Tailwind","Redux","MobX","Zustand","Recoil"],
+  ai:        ["TensorFlow","PyTorch","Pandas","NumPy","Spark","Hadoop","Tableau","Keras","Scikit-learn","Airflow","Kafka","MLflow","BigQuery","dbt","Looker","XGBoost","LightGBM"],
+  api:       ["REST API","GraphQL","gRPC","WebSocket"],
+};
+const CATEGORY_LABEL = {
+  language:  "언어",
+  framework: "프레임워크",
+  cloud:     "클라우드/인프라",
+  tool:      "도구",
+  ai:        "AI/데이터",
+  api:       "API/플랫폼",
+  method:    "기법",
+  other:     "기타",
+};
+
+function getSkillCategory(keyword) {
+  if (!keyword) return "other";
+  const k = keyword.toLowerCase();
+  for (const [cat, skills] of Object.entries(SKILL_CATEGORIES)) {
+    if (skills.some(s => k.includes(s.toLowerCase()))) return cat;
+  }
+  return "other";
+}
+
+// ─── AI tool catalog ────────────────────────────────────────────────
+const AI_TOOLS = {
+  "도구":      ["Copilot","GitHub Copilot","Claude Code","클로드코드","Claude","Cursor","Cody","Tabnine","CodeWhisperer","Windsurf","Devin","ChatGPT","GPT-4","Gemini","Perplexity","Midjourney","DALL-E","Stable Diffusion","Runway","Sora","Figma AI","Adobe Firefly","Notion AI","Gamma","Jasper","Grammarly AI"],
+  "API/플랫폼": ["OpenAI","Anthropic"],
+  "프레임워크": ["LangChain","LlamaIndex"],
+  "기법":      ["RAG","벡터DB"],
+};
+const AI_SYNONYMS = {
+  "Claude":          ["클로드코드","Claude Code","Claude"],
+  "GitHub Copilot":  ["GitHub Copilot","Copilot"],
+  "GPT-4":           ["GPT-4","GPT4"],
+};
+const AI_TAG_TO_CAT = {
+  "도구":      "tool",
+  "API/플랫폼": "api",
+  "프레임워크": "framework",
+  "기법":      "method",
+};
+
+function classifyPos(p) {
+  if (!p) return "기타";
+  const l = p.toLowerCase();
+  if (["프론트","frontend","front-end","react","vue","퍼블리셔"].some(k => l.includes(k))) return "Frontend";
+  if (["백엔드","backend","back-end","서버","server","풀스택","fullstack","웹 개발","웹개발"].some(k => l.includes(k))) return "Backend";
+  if (["devops","sre","infra","인프라","데브옵스","cloud","클라우드","kubernetes","쿠버네티스"].some(k => l.includes(k))) return "DevOps";
+  if (["data","데이터","ml","machine","ai","머신러닝","딥러닝","nlp","llm"].some(k => l.includes(k))) return "Data/AI";
+  if (["android","ios","모바일","mobile","flutter","react native"].some(k => l.includes(k))) return "Mobile";
+  if (["java","spring","python","django","node","golang","php"].some(k => l.includes(k))) return "Backend";
+  if (["기획","pm","product manager","po"].some(k => l.includes(k))) return "기획/PM";
+  if (["qa","test","품질","테스트"].some(k => l.includes(k))) return "QA";
+  return "기타";
+}
+
+function classifyExp(level) {
+  if (!level) return null;
+  const s = String(level);
+  if (/신입|0\s*[~-]\s*1|0\s*[~-]\s*2|0\s*[~-]\s*3/.test(s)) return "신입";
+  const m = s.match(/(\d+)\s*[~-]\s*(\d+)/);
+  if (m) {
+    const hi = +m[2];
+    if (hi <= 3)  return "1–3년";
+    if (hi <= 5)  return "3–5년";
+    if (hi <= 10) return "5–10년";
+    return "10년+";
+  }
+  if (/10년 이상|10\+/.test(s)) return "10년+";
+  if (/5년 이상|5\+/.test(s))   return "5–10년";
+  if (/3년 이상|3\+/.test(s))   return "3–5년";
+  if (/1년 이상|1\+/.test(s))   return "1–3년";
+  return null;
+}
+
+// ─── Filter → DB value mappings ──────────────────────────────────────
+// UI label → canonical role token used by classifyPos and skill_analysis.
+const ROLE_FILTER_MAP = {
+  "전체 직무": null,
+  "백엔드":    "Backend",
+  "프론트엔드": "Frontend",
+  "AI/데이터": "Data/AI",
+  "DevOps":   "DevOps",
+  "모바일":    "Mobile",
+};
+// skill_analysis.position_type uses Korean labels in some seeds.
+const ROLE_DB_ALIASES = {
+  "Backend":  ["Backend",  "백엔드",  "Backend Engineer"],
+  "Frontend": ["Frontend", "프론트엔드"],
+  "Data/AI":  ["Data Science", "Data/AI", "데이터", "AI/데이터"],
+  "DevOps":   ["DevOps", "데브옵스"],
+  "Mobile":   ["Mobile", "모바일"],
+};
+
+// UI exp label → skill_analysis.target bucket (junior/senior).
+function expToTarget(label) {
+  if (!label || label === "전체 경력") return null;
+  if (label === "신입" || label === "1–3년") return "junior";
+  return "senior";
+}
+
+// ─── Aggregations (always take a pre-filtered subset) ────────────────
+function buildSkillsTop10(skillRows) {
+  const acc = {};
+  for (const r of skillRows) {
+    const name = r.keyword;
+    if (!name) continue;
+    if (!acc[name]) acc[name] = { name, count: 0, required: 0, preferred: 0 };
+    acc[name].count     += r.total_count     || 0;
+    acc[name].required  += r.required_count  || 0;
+    acc[name].preferred += r.preferred_count || 0;
+  }
+  const sorted = Object.values(acc).sort((a, b) => b.count - a.count).slice(0, 10);
+  return sorted.map(s => {
+    const total = s.required + s.preferred;
+    const reqPct  = total ? Math.round((s.required / total) * 100) : 0;
+    const prefPct = total ? 100 - reqPct : 0;
+    return {
+      name:      s.name,
+      count:     s.count,
+      cat:       getSkillCategory(s.name),
+      trend:     0,
+      required:  reqPct,
+      preferred: prefPct,
+    };
+  });
+}
+
+function buildCategoryDist(skillRows) {
+  const totals = {};
+  for (const r of skillRows) {
+    const cat = getSkillCategory(r.keyword || "");
+    totals[cat] = (totals[cat] || 0) + (r.total_count || 0);
+  }
+  const sum = Object.values(totals).reduce((a, b) => a + b, 0) || 1;
+  return Object.entries(totals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, v]) => ({
+      name:  CATEGORY_LABEL[cat] || cat,
+      value: +((v / sum) * 100).toFixed(1),
+      color: cat,
+    }));
+}
+
+function buildExpDist(jobRows) {
+  const buckets = { "신입": 0, "1–3년": 0, "3–5년": 0, "5–10년": 0, "10년+": 0 };
+  for (const j of jobRows) {
+    const g = classifyExp(j.experience_level);
+    if (g && buckets[g] != null) buckets[g] += 1;
+  }
+  return Object.entries(buckets).map(([label, value]) => ({ label, value }));
+}
+
+function buildAITrends(jobRows) {
+  const synonymToCanonical = {};
+  for (const [canonical, vlist] of Object.entries(AI_SYNONYMS)) {
+    for (const v of vlist) synonymToCanonical[v.toLowerCase()] = canonical;
+  }
+  const variants = [];
+  for (const [tag, list] of Object.entries(AI_TOOLS)) {
+    for (const tool of list) {
+      const canonical = synonymToCanonical[tool.toLowerCase()] || tool;
+      variants.push({ pattern: tool.toLowerCase(), canonical, tag });
+    }
+  }
+
+  const counts = {};
+  const byRole = {};
+
+  for (const j of jobRows) {
+    const req  = (j.requirements || "").toLowerCase();
+    const pref = (j.preferred    || "").toLowerCase();
+    const tech = (j.tech_stack   || "").toString().toLowerCase();
+    const all  = `${req} ${pref} ${tech}`;
+    const role = classifyPos(j.position);
+
+    const seen = new Set();
+    for (const v of variants) {
+      if (!all.includes(v.pattern)) continue;
+      if (seen.has(v.canonical)) continue;
+      seen.add(v.canonical);
+
+      if (!counts[v.canonical]) counts[v.canonical] = { total: 0, req: 0, pref: 0, tag: v.tag };
+      counts[v.canonical].total += 1;
+      if (req.includes(v.pattern))  counts[v.canonical].req  += 1;
+      if (pref.includes(v.pattern)) counts[v.canonical].pref += 1;
+    }
+    if (seen.size > 0) {
+      byRole[role] = (byRole[role] || 0) + seen.size;
+    }
+  }
+
+  const aiTools = Object.entries(counts)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 10)
+    .map(([name, info], i) => ({
+      rank:  i + 1,
+      name,
+      count: info.total,
+      cat:   AI_TAG_TO_CAT[info.tag] || "tool",
+      tag:   info.tag,
+      trend: 0,
+    }));
+
+  const tagTotals = {};
+  for (const info of Object.values(counts)) {
+    tagTotals[info.tag] = (tagTotals[info.tag] || 0) + info.total;
+  }
+  const tagSum = Object.values(tagTotals).reduce((a, b) => a + b, 0) || 1;
+  const aiCategory = Object.entries(tagTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag, v]) => ({
+      name:  tag,
+      value: +((v / tagSum) * 100).toFixed(1),
+      color: AI_TAG_TO_CAT[tag] || "tool",
+    }));
+
+  const aiByRole = Object.entries(byRole)
+    .sort((a, b) => b[1] - a[1])
+    .map(([role, value]) => ({ role, value }));
+
+  const aiReqPref = aiTools.slice(0, 6).map(t => {
+    const c = counts[t.name];
+    const tot = (c.req + c.pref) || c.total || 1;
+    const reqPct  = Math.round((c.req / tot) * 100);
+    const prefPct = 100 - reqPct;
+    return {
+      name:      t.name,
+      count:     c.total,
+      required:  reqPct,
+      preferred: prefPct,
+      tag:       c.tag,
+    };
+  });
+
+  return { aiTools, aiCategory, aiByRole, aiReqPref };
+}
+
+// ─── Filter applied to TSI_RAW ──────────────────────────────────────
+function filterRaw(raw, { role, exp } = {}) {
+  const canonicalRole = ROLE_FILTER_MAP[role];
+  const aliases = canonicalRole ? new Set(ROLE_DB_ALIASES[canonicalRole].map(s => s.toLowerCase())) : null;
+  const target  = expToTarget(exp);
+  const expLabel = exp && exp !== "전체 경력" ? exp : null;
+
+  const skillRows = raw.skillRows.filter(r => {
+    if (aliases) {
+      const pt = (r.position_type || "").toLowerCase();
+      // 'all' means cross-position aggregate; keep it for any role view too.
+      if (pt && pt !== "all" && !aliases.has(pt)) return false;
+    }
+    if (target) {
+      const t = (r.target || "").toLowerCase();
+      if (t && t !== "all" && t !== target) return false;
+    }
+    return true;
+  });
+
+  const jobRows = raw.jobRows.filter(j => {
+    if (canonicalRole && classifyPos(j.position) !== canonicalRole) return false;
+    if (expLabel && classifyExp(j.experience_level) !== expLabel)   return false;
+    return true;
+  });
+
+  return { skillRows, jobRows };
+}
+
+// ─── Mock fallback ───────────────────────────────────────────────────
+const MOCK_TSI_DATA = {
+  UPDATED: "—",
+  TOTAL_JOBS: 0, TOTAL_SKILLS: 0, TOTAL_AI_TOOLS: 0,
+  SKILLS_TOP10: [], CATEGORY_DIST: [], EXP_DIST: [
+    { label: "신입", value: 0 }, { label: "1–3년", value: 0 },
+    { label: "3–5년", value: 0 }, { label: "5–10년", value: 0 }, { label: "10년+", value: 0 },
   ],
+  RECENT_TRENDS: [],
+  AI_TOOLS: [], AI_CATEGORY: [], AI_BY_ROLE: [], AI_REQ_PREF: [],
+  RECOMMEND_ROLES: [], RECOMMEND_JOBS: [],
+};
 
-  // Donut: category share — value is % (0-100)
-  // color matches CSS var --cat-{key}
-  CATEGORY_DIST: [
-    { name: "언어",         value: 28.4, color: "language"  },
-    { name: "클라우드/인프라", value: 22.1, color: "cloud"     },
-    { name: "프레임워크",     value: 18.6, color: "framework" },
-    { name: "도구",         value: 14.2, color: "tool"      },
-    { name: "AI/데이터",     value:  9.3, color: "ai"        },
-    { name: "기법",         value:  4.8, color: "method"    },
-    { name: "API/플랫폼",   value:  2.6, color: "api"       },
-  ],
+// ─── Aggregator (filters → full TSI_DATA shape) ──────────────────────
+window.TSI_AGGREGATE = function (opts = {}) {
+  const raw = window.TSI_RAW;
+  if (!raw) return { ...MOCK_TSI_DATA };
 
-  // Vertical bars
-  EXP_DIST: [
-    { label: "신입",     value:  920 },
-    { label: "1–3년",   value: 2480 },
-    { label: "3–5년",   value: 2860 },
-    { label: "5–10년",  value: 1640 },
-    { label: "10년+",   value:  521 },
-  ],
+  const { skillRows, jobRows } = filterRaw(raw, opts);
 
-  RECENT_TRENDS: [
-    { label: "Kubernetes", change: 18 },
-    { label: "TypeScript", change: 15 },
-    { label: "Go",         change: 22 },
-    { label: "Rust",       change: 31 },
-  ],
+  const SKILLS_TOP10  = buildSkillsTop10(skillRows);
+  const CATEGORY_DIST = buildCategoryDist(skillRows);
+  const EXP_DIST      = buildExpDist(jobRows);
+  const ai            = buildAITrends(jobRows);
 
-  // ─── AI section ──────────────────────────────────────────────────
-  AI_TOOLS: [
-    { rank:  1, name: "GitHub Copilot",   count: 412, cat: "tool",      tag: "도구",      trend: 24 },
-    { rank:  2, name: "ChatGPT",          count: 388, cat: "ai",        tag: "도구",      trend: 18 },
-    { rank:  3, name: "Claude",           count: 246, cat: "ai",        tag: "도구",      trend: 42 },
-    { rank:  4, name: "OpenAI",           count: 218, cat: "api",       tag: "API/플랫폼", trend: 16 },
-    { rank:  5, name: "LangChain",        count: 196, cat: "framework", tag: "프레임워크",  trend: 28 },
-    { rank:  6, name: "RAG",              count: 174, cat: "method",    tag: "기법",      trend: 35 },
-    { rank:  7, name: "Cursor",           count: 142, cat: "tool",      tag: "도구",      trend: 58 },
-    { rank:  8, name: "Anthropic",        count: 128, cat: "api",       tag: "API/플랫폼", trend: 45 },
-    { rank:  9, name: "벡터DB",            count: 116, cat: "method",    tag: "기법",      trend: 22 },
-    { rank: 10, name: "LlamaIndex",       count:  94, cat: "framework", tag: "프레임워크",  trend: 19 },
-  ],
+  const TOTAL_SKILLS = new Set(skillRows.map(r => r.keyword).filter(Boolean)).size;
+  const updatedDates = raw.jobRows.map(j => j.crawled_at).filter(Boolean).sort().reverse();
+  const UPDATED = updatedDates[0] ? updatedDates[0].slice(0, 10) : "—";
 
-  AI_CATEGORY: [
-    { name: "도구",        value: 38.2, color: "tool"      },
-    { name: "프레임워크",   value: 23.8, color: "framework" },
-    { name: "API/플랫폼",  value: 18.4, color: "api"       },
-    { name: "기법",        value: 14.6, color: "method"    },
-    { name: "AI/데이터",   value:  5.0, color: "ai"        },
-  ],
+  const RECENT_TRENDS = SKILLS_TOP10.slice(0, 4).map(s => ({ label: s.name, change: 0 }));
 
-  AI_BY_ROLE: [
-    { role: "Data/AI",   value: 412 },
-    { role: "Backend",   value: 286 },
-    { role: "Frontend",  value: 184 },
-    { role: "DevOps",    value: 142 },
-    { role: "Mobile",    value:  62 },
-    { role: "QA",        value:  38 },
-    { role: "기획/PM",    value:  46 },
-    { role: "기타",       value:  24 },
-  ],
+  const recommendRoles = {};
+  for (const j of jobRows) {
+    const role = classifyPos(j.position);
+    recommendRoles[role] = (recommendRoles[role] || 0) + 1;
+  }
+  const RECOMMEND_ROLES = Object.entries(recommendRoles)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([role, count], i) => ({ role, match: 95 - i * 7, count }));
 
-  AI_REQ_PREF: [
-    { name: "GitHub Copilot", count: 412, required: 28, preferred: 72, tag: "도구" },
-    { name: "ChatGPT",        count: 388, required: 22, preferred: 78, tag: "도구" },
-    { name: "LangChain",      count: 196, required: 45, preferred: 55, tag: "프레임워크" },
-    { name: "RAG",            count: 174, required: 52, preferred: 48, tag: "기법" },
-    { name: "OpenAI",         count: 218, required: 38, preferred: 62, tag: "API/플랫폼" },
-    { name: "Cursor",         count: 142, required: 14, preferred: 86, tag: "도구" },
-  ],
+  const RECOMMEND_JOBS = jobRows.slice(0, 5).map((j, i) => ({
+    title:    j.position || "(제목 없음)",
+    role:     classifyPos(j.position),
+    company:  "—",
+    location: j.location || "—",
+    exp:      j.experience_level || "경력 무관",
+    match:    95 - i * 5,
+    skills:   (j.tech_stack || "").toString().split(/[,\s]+/).filter(Boolean).slice(0, 5),
+    bullets: [
+      (j.requirements || "").slice(0, 80) || "자격요건 미공개",
+      (j.preferred    || "").slice(0, 80) || "우대사항 미공개",
+    ],
+  }));
 
-  // ─── Stack Match section ─────────────────────────────────────────
-  RECOMMEND_ROLES: [
-    { role: "Backend Engineer",  match: 92, count: 124 },
-    { role: "DevOps Engineer",   match: 86, count:  78 },
-    { role: "Data Engineer",     match: 78, count:  62 },
-    { role: "Cloud Architect",   match: 71, count:  34 },
-    { role: "ML Engineer",       match: 64, count:  41 },
-  ],
+  return {
+    UPDATED,
+    TOTAL_JOBS:     jobRows.length,
+    TOTAL_SKILLS,
+    TOTAL_AI_TOOLS: ai.aiTools.length,
+    SKILLS_TOP10, CATEGORY_DIST, EXP_DIST, RECENT_TRENDS,
+    AI_TOOLS:    ai.aiTools,
+    AI_CATEGORY: ai.aiCategory,
+    AI_BY_ROLE:  ai.aiByRole,
+    AI_REQ_PREF: ai.aiReqPref,
+    RECOMMEND_ROLES, RECOMMEND_JOBS,
+  };
+};
 
-  RECOMMEND_JOBS: [
-    {
-      title: "백엔드 개발자 (Python/AWS)",
-      role: "Backend",
-      company: "토스",
-      location: "서울 강남",
-      exp: "3–5년",
-      match: 94,
-      skills: ["Python", "AWS", "Docker", "PostgreSQL", "Kubernetes"],
-      bullets: [
-        "대규모 트래픽 환경에서의 백엔드 시스템 설계 및 개발",
-        "AWS 기반 마이크로서비스 아키텍처 구축",
-        "결제/송금 도메인 비즈니스 로직 구현",
-      ],
-    },
-    {
-      title: "Cloud Platform Engineer",
-      role: "DevOps",
-      company: "쿠팡",
-      location: "서울 송파",
-      exp: "3–5년",
-      match: 88,
-      skills: ["AWS", "Kubernetes", "Terraform", "Python", "Go"],
-      bullets: [
-        "EKS 기반 멀티 클러스터 운영 및 자동화",
-        "IaC(Terraform) 기반 인프라 표준화",
-        "옵저버빌리티 스택 운영 (Prometheus/Grafana)",
-      ],
-    },
-    {
-      title: "Data Engineer (LLM 파이프라인)",
-      role: "Data/AI",
-      company: "네이버",
-      location: "경기 성남",
-      exp: "1–3년",
-      match: 81,
-      skills: ["Python", "Airflow", "Spark", "AWS", "LangChain"],
-      bullets: [
-        "RAG 파이프라인 구축 및 운영",
-        "벡터DB(Pinecone/Weaviate) 인덱싱 자동화",
-        "데이터 품질 모니터링 시스템 개발",
-      ],
-    },
-    {
-      title: "Senior Backend Engineer",
-      role: "Backend",
-      company: "당근",
-      location: "서울 서초",
-      exp: "5–10년",
-      match: 76,
-      skills: ["Go", "AWS", "Kafka", "PostgreSQL", "gRPC"],
-      bullets: [
-        "지역 기반 매칭 시스템 백엔드 개발",
-        "이벤트 기반 아키텍처 설계 및 운영",
-        "주니어 엔지니어 멘토링",
-      ],
-    },
-    {
-      title: "MLOps Engineer",
-      role: "Data/AI",
-      company: "카카오",
-      location: "경기 판교",
-      exp: "3–5년",
-      match: 72,
-      skills: ["Python", "Kubernetes", "MLflow", "AWS", "Docker"],
-      bullets: [
-        "모델 서빙 파이프라인 구축",
-        "Feature Store 운영",
-        "실험 관리/추적 시스템 개발",
-      ],
-    },
-  ],
+// ─── Loader (called once at boot) ────────────────────────────────────
+async function fetchAllPaged(sb, table, columns, pageSize = 1000) {
+  let all = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await sb.from(table).select(columns).range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
+window.TSI_LOAD = async function () {
+  if (!window.supabase) {
+    console.warn("[data.js] Supabase SDK not loaded — using mock fallback");
+    return { ...MOCK_TSI_DATA };
+  }
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  try {
+    const [skillRows, jobRows] = await Promise.all([
+      sb.from("skill_analysis").select("*").then(r => {
+        if (r.error) throw r.error;
+        return r.data || [];
+      }),
+      fetchAllPaged(sb, "raw_job_postings",
+        "id, position, experience_level, requirements, preferred, tech_stack, location, source, crawled_at"),
+    ]);
+
+    window.TSI_RAW = { skillRows, jobRows };
+    return window.TSI_AGGREGATE();
+  } catch (err) {
+    console.error("[data.js] fetch failed:", err);
+    return { ...MOCK_TSI_DATA };
+  }
 };
