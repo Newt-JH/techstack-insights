@@ -40,6 +40,15 @@ function MatchSection() {
     }, 600);
   };
 
+  // 새로 마운트된 결과 카드가 .reveal opacity:0 상태로 멈춰있지 않도록,
+  // 결과가 바뀔 때마다 setupReveal()을 재실행해서 .in 클래스를 붙여줌.
+  useEffect(() => {
+    if (submitted && typeof setupReveal === "function") {
+      const t = setTimeout(() => setupReveal(), 30);
+      return () => clearTimeout(t);
+    }
+  }, [submitted, results]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <Card title="Stack Match" sub="보유 스킬과 경력을 입력하면 적합한 직무와 회사를 추천해드립니다"
