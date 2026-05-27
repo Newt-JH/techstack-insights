@@ -1,13 +1,13 @@
 // Stack Match section
 
 function MatchSection() {
-  const D = window.TSI_DATA;
-  const [exp, setExp] = useState("신입");
-  const [region, setRegion] = useState("서울");
+  const [exp, setExp] = useState("전체 경력");
+  const [region, setRegion] = useState("전국");
   const [skills, setSkills] = useState(["AWS", "Python"]);
   const [skillInput, setSkillInput] = useState("");
-  const [submitted, setSubmitted] = useState(true);
+  const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState({ ROLES: [], JOBS: [] });
 
   const SUGGESTIONS = ["Python", "Java", "AWS", "Docker", "Kubernetes", "Spring", "React", "Vue", "Go", "SQL", "GCP", "TypeScript"];
 
@@ -17,9 +17,27 @@ function MatchSection() {
   };
   const removeSkill = (s) => setSkills(skills.filter(x => x !== s));
 
+  // Run an initial match against the default skills once data is ready,
+  // so the section isn't empty on first visit.
+  useEffect(() => {
+    if (window.TSI_MATCH && window.TSI_RAW) {
+      setResults(window.TSI_MATCH({ skills, exp, region }));
+      setSubmitted(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const submit = () => {
-    setLoading(true); setSubmitted(false);
-    setTimeout(() => { setLoading(false); setSubmitted(true); }, 900);
+    setLoading(true);
+    setSubmitted(false);
+    setTimeout(() => {
+      const next = window.TSI_MATCH
+        ? window.TSI_MATCH({ skills, exp, region })
+        : { ROLES: [], JOBS: [] };
+      setResults(next);
+      setLoading(false);
+      setSubmitted(true);
+    }, 600);
   };
 
   return (
@@ -29,12 +47,12 @@ function MatchSection() {
         <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
           <Field label="경력">
             <select className="tsi-select" value={exp} onChange={(e) => setExp(e.target.value)}>
-              {["신입", "1–3년", "3–5년", "5–10년", "10년+"].map(o => <option key={o}>{o}</option>)}
+              {["전체 경력", "신입", "1–3년", "3–5년", "5–10년", "10년+"].map(o => <option key={o}>{o}</option>)}
             </select>
           </Field>
           <Field label="지역">
             <select className="tsi-select" value={region} onChange={(e) => setRegion(e.target.value)}>
-              {["서울", "경기", "부산", "대전", "원격"].map(o => <option key={o}>{o}</option>)}
+              {["전국", "서울", "경기", "부산", "대전", "원격"].map(o => <option key={o}>{o}</option>)}
             </select>
           </Field>
           <Field label="보유 스킬 추가">
@@ -74,21 +92,32 @@ function MatchSection() {
 
       {loading && <LoadingPanel />}
 
-      {submitted && !loading && (
+      {submitted && !loading && results.JOBS.length === 0 && (
+        <Card accent>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "32px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>조건에 맞는 공고가 없습니다</div>
+            <div style={{ fontSize: 12, color: "var(--text-3)" }}>
+              보유 스킬을 더 추가하거나, 경력·지역 필터를 완화해 보세요.
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {submitted && !loading && results.JOBS.length > 0 && (
         <>
-          <Card title="추천 직무" sub="매칭률 순"
-            action={<Tag kind="tool">{D.RECOMMEND_JOBS.length}건</Tag>} accent>
+          <Card title="추천 직무" sub="입력한 스킬과의 매칭률 순"
+            action={<Tag kind="tool">{results.JOBS.length}건</Tag>} accent>
             <div>
-              {D.RECOMMEND_ROLES.map((r, i) => (
+              {results.ROLES.map((r, i) => (
                 <RoleMatchBar key={r.role} role={r.role} match={r.match} count={r.count} delay={i * 0.06} />
               ))}
             </div>
           </Card>
 
-          <Card title="매칭 공고 목록" sub="추천 직무에 매칭된 채용 공고" accent>
+          <Card title="매칭 공고 목록" sub="보유 스킬이 가장 많이 일치한 공고" accent>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {D.RECOMMEND_JOBS.map((j, i) => (
-                <JobCard key={j.title} job={j} delay={i * 0.04} />
+              {results.JOBS.map((j, i) => (
+                <JobCard key={`${j.title}-${i}`} job={j} delay={i * 0.04} />
               ))}
             </div>
           </Card>

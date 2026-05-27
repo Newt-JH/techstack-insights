@@ -357,6 +357,81 @@ window.TSI_AGGREGATE = function (opts = {}) {
   };
 };
 
+// ─── Stack Match (skill-based job scoring) ──────────────────────────
+// Given the user's skills/exp/region, scan TSI_RAW.jobRows and score each job
+// by how many of the user's skills appear in (requirements + preferred +
+// tech_stack). Returns top jobs sorted by hits and aggregated role buckets.
+window.TSI_MATCH = function ({ skills = [], exp = null, region = null } = {}) {
+  const raw = window.TSI_RAW;
+  if (!raw || !raw.jobRows) return { ROLES: [], JOBS: [] };
+
+  const userSkills = skills.filter(Boolean);
+  if (userSkills.length === 0) return { ROLES: [], JOBS: [] };
+
+  const userSkillsLower = userSkills.map(s => s.toLowerCase());
+  const expBucket = exp && exp !== "전체 경력" ? exp : null;
+  // 지역 필터: "전국"이나 "원격"은 위치 무시
+  const regionLower = region && region !== "전국" && region !== "원격"
+    ? region.toLowerCase()
+    : null;
+
+  const scored = [];
+  for (const j of raw.jobRows) {
+    if (expBucket && classifyExp(j.experience_level) !== expBucket) continue;
+    if (regionLower && !(j.location || "").toLowerCase().includes(regionLower)) continue;
+
+    const text = `${j.requirements || ""} ${j.preferred || ""} ${j.tech_stack || ""} ${j.title || ""} ${j.position || ""}`.toLowerCase();
+    let hits = 0;
+    for (const s of userSkillsLower) {
+      if (s && text.includes(s)) hits += 1;
+    }
+    if (hits === 0) continue;
+
+    // 매칭률 = 사용자 스킬 중 몇 %가 공고에 나오는가 (최대 99%로 캡)
+    const matchPct = Math.min(99, Math.round((hits / userSkillsLower.length) * 100));
+    scored.push({ job: j, hits, matchPct });
+  }
+
+  scored.sort((a, b) => b.hits - a.hits || b.matchPct - a.matchPct);
+
+  const JOBS = scored.slice(0, 5).map(s => {
+    const techList = (s.job.tech_stack || "").toString()
+      .split(/[,\s]+/).filter(Boolean).slice(0, 6);
+    return {
+      title:    s.job.title || s.job.position || "(제목 없음)",
+      role:     classifyPos(s.job.position),
+      company:  s.job.company || "—",
+      location: s.job.location || "—",
+      exp:      s.job.experience_level || "경력 무관",
+      match:    s.matchPct,
+      skills:   techList,
+      bullets: [
+        (s.job.requirements || "").replace(/\s+/g, " ").slice(0, 80) || "자격요건 미공개",
+        (s.job.preferred    || "").replace(/\s+/g, " ").slice(0, 80) || "우대사항 미공개",
+      ],
+    };
+  });
+
+  // 직무별 평균 매칭률 + 공고 수
+  const roleMap = {};
+  for (const s of scored) {
+    const role = classifyPos(s.job.position);
+    if (!roleMap[role]) roleMap[role] = { sum: 0, count: 0 };
+    roleMap[role].sum   += s.matchPct;
+    roleMap[role].count += 1;
+  }
+  const ROLES = Object.entries(roleMap)
+    .map(([role, { sum, count }]) => ({
+      role,
+      match: Math.round(sum / count),
+      count,
+    }))
+    .sort((a, b) => b.match - a.match || b.count - a.count)
+    .slice(0, 5);
+
+  return { ROLES, JOBS };
+};
+
 // ─── Loader (called once at boot) ────────────────────────────────────
 async function fetchAllPaged(sb, table, columns, pageSize = 1000) {
   let all = [];
@@ -386,7 +461,7 @@ window.TSI_LOAD = async function () {
         return r.data || [];
       }),
       fetchAllPaged(sb, "raw_job_postings",
-        "id, position, experience_level, requirements, preferred, tech_stack, location, source, crawled_at"),
+        "id, title, company, position, experience_level, requirements, preferred, tech_stack, location, source, crawled_at"),
     ]);
 
     window.TSI_RAW = { skillRows, jobRows };
