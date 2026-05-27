@@ -417,9 +417,8 @@ window.TSI_MATCH = function ({ skills = [], exp = null, region = null } = {}) {
 
   scored.sort((a, b) => b.hits - a.hits || b.matchPct - a.matchPct);
 
-  // 매칭된 전체 결과를 반환. UI 측에서 페이지네이션으로 자름.
-  // 너무 많은 매칭은 메모리/렌더 부담이라 상위 200건으로 캡.
-  const JOBS = scored.slice(0, 200).map(s => {
+  // 매칭률 상위 5건만 반환 — 발표용 임팩트 + 렌더 부담 최소화.
+  const JOBS = scored.slice(0, 5).map(s => {
     const techList = parseTechStack(s.job.tech_stack).slice(0, 6);
     return {
       title:    s.job.title || s.job.position || "(제목 없음)",
