@@ -1,5 +1,7 @@
 // Stack Match section
 
+const PAGE_SIZE = 10;
+
 function MatchSection() {
   const [exp, setExp] = useState("전체 경력");
   const [region, setRegion] = useState("전국");
@@ -8,6 +10,7 @@ function MatchSection() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState({ ROLES: [], JOBS: [] });
+  const [page, setPage] = useState(1);
 
   const SUGGESTIONS = ["Python", "Java", "AWS", "Docker", "Kubernetes", "Spring", "React", "Vue", "Go", "SQL", "GCP", "TypeScript"];
 
@@ -30,6 +33,7 @@ function MatchSection() {
   const submit = () => {
     setLoading(true);
     setSubmitted(false);
+    setPage(1);
     setTimeout(() => {
       const next = window.TSI_MATCH
         ? window.TSI_MATCH({ skills, exp, region })
@@ -39,6 +43,9 @@ function MatchSection() {
       setSubmitted(true);
     }, 600);
   };
+
+  const totalPages = Math.max(1, Math.ceil(results.JOBS.length / PAGE_SIZE));
+  const visibleJobs = results.JOBS.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -114,12 +121,18 @@ function MatchSection() {
             </div>
           </Card>
 
-          <Card title="매칭 공고 목록" sub="보유 스킬이 가장 많이 일치한 공고" accent>
+          <Card title="매칭 공고 목록"
+            sub={`보유 스킬이 가장 많이 일치한 공고 · 페이지 ${page} / ${totalPages}`}
+            action={<Tag kind="tool">{results.JOBS.length}건</Tag>}
+            accent>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {results.JOBS.map((j, i) => (
-                <JobCard key={`${j.title}-${i}`} job={j} delay={i * 0.04} />
+              {visibleJobs.map((j, i) => (
+                <JobCard key={`p${page}-${i}-${j.title}`} job={j} delay={i * 0.04} />
               ))}
             </div>
+            {totalPages > 1 && (
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            )}
           </Card>
         </>
       )}
@@ -274,4 +287,57 @@ function MatchRing({ pct }) {
   );
 }
 
-Object.assign(window, { MatchSection, Field, SkillChip, LoadingPanel, RoleMatchBar, JobCard, MatchRing });
+function Pagination({ page, totalPages, onChange }) {
+  // ‘1 … (page-1) page (page+1) … last’ 형태 압축
+  const windowSize = 1;
+  const items = [];
+  const push = (v) => items.push(v);
+
+  push(1);
+  if (page - windowSize > 2) push("…");
+  for (let p = Math.max(2, page - windowSize); p <= Math.min(totalPages - 1, page + windowSize); p++) {
+    push(p);
+  }
+  if (page + windowSize < totalPages - 1) push("…");
+  if (totalPages > 1) push(totalPages);
+
+  const btnBase = {
+    minWidth: 32, height: 32, padding: "0 8px",
+    borderRadius: 8, border: "1px solid var(--border)",
+    background: "transparent", color: "var(--text-2)",
+    cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    transition: "all .2s",
+  };
+  const btnActive = {
+    ...btnBase,
+    background: "linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%)",
+    color: "#fff", border: "1px solid transparent",
+    boxShadow: "0 0 14px rgba(124,92,255,.4)",
+  };
+  const btnDisabled = { ...btnBase, opacity: 0.35, cursor: "default" };
+
+  return (
+    <div style={{
+      marginTop: 18, display: "flex", justifyContent: "center",
+      alignItems: "center", gap: 6, flexWrap: "wrap",
+    }}>
+      <button style={page === 1 ? btnDisabled : btnBase}
+        disabled={page === 1} onClick={() => onChange(page - 1)}>← 이전</button>
+
+      {items.map((it, idx) =>
+        it === "…" ? (
+          <span key={`e${idx}`} style={{ color: "var(--text-3)", padding: "0 4px" }}>…</span>
+        ) : (
+          <button key={it} style={it === page ? btnActive : btnBase}
+            onClick={() => onChange(it)}>{it}</button>
+        )
+      )}
+
+      <button style={page === totalPages ? btnDisabled : btnBase}
+        disabled={page === totalPages} onClick={() => onChange(page + 1)}>다음 →</button>
+    </div>
+  );
+}
+
+Object.assign(window, { MatchSection, Field, SkillChip, LoadingPanel, RoleMatchBar, JobCard, MatchRing, Pagination });
