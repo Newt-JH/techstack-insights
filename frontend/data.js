@@ -77,6 +77,26 @@ function classifyPos(p) {
   return "기타";
 }
 
+// tech_stack 컬럼은 사이트별로 형태가 제각각:
+//   '["Java","Python"]'  (점핏/원티드 — JSON 문자열)
+//   'Java, Python'       (쉼표 구분)
+//   ''                   (빈 값)
+// 어떤 형태든 깨끗한 문자열 배열로 변환.
+function parseTechStack(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean).map(String);
+  const s = String(raw).trim();
+  if (s.startsWith("[")) {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) return arr.filter(Boolean).map(String);
+    } catch (_) {
+      /* fall through to delimiter split */
+    }
+  }
+  return s.split(/[,\n]+/).map(t => t.trim()).filter(Boolean);
+}
+
 function classifyExp(level) {
   if (!level) return null;
   const s = String(level);
@@ -363,7 +383,10 @@ window.TSI_AGGREGATE = function (opts = {}) {
 // tech_stack). Returns top jobs sorted by hits and aggregated role buckets.
 window.TSI_MATCH = function ({ skills = [], exp = null, region = null } = {}) {
   const raw = window.TSI_RAW;
-  if (!raw || !raw.jobRows) return { ROLES: [], JOBS: [] };
+  if (!raw || !raw.jobRows) {
+    console.warn("[TSI_MATCH] window.TSI_RAW 가 비어있음 — Supabase fetch 실패했을 가능성");
+    return { ROLES: [], JOBS: [] };
+  }
 
   const userSkills = skills.filter(Boolean);
   if (userSkills.length === 0) return { ROLES: [], JOBS: [] };
@@ -395,8 +418,7 @@ window.TSI_MATCH = function ({ skills = [], exp = null, region = null } = {}) {
   scored.sort((a, b) => b.hits - a.hits || b.matchPct - a.matchPct);
 
   const JOBS = scored.slice(0, 5).map(s => {
-    const techList = (s.job.tech_stack || "").toString()
-      .split(/[,\s]+/).filter(Boolean).slice(0, 6);
+    const techList = parseTechStack(s.job.tech_stack).slice(0, 6);
     return {
       title:    s.job.title || s.job.position || "(제목 없음)",
       role:     classifyPos(s.job.position),
